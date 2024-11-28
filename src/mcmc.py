@@ -32,30 +32,22 @@ class GuidedMCMC:
         else:
             return xt, -p
 
+
     def _guided_metropolis_within_gibbs_step(self, xt, temp, p):
-        # Fixed at 2 dimensions
         x_curr = xt.copy()
+        z = abs(norm.rvs(0, 1 / temp, self.n_dim))
 
-        # Update x1
-        z = abs(norm.rvs(0, 1 / temp, 1))
-        y = x_curr[0] + p[0] * z[0] # Proposal
-        alpha = self._sample_target(temp, y, x_curr[1]) / self._sample_target(temp, x_curr[0], x_curr[1])
+        for i in range(self.n_dim):
+            y = x_curr[i] + p[i] * z[i] # Proposal
+            x_proposal = x_curr.copy()
+            x_proposal[i] = y
+            alpha = self._sample_target(temp, *x_proposal) / self._sample_target(temp, *x_curr)
 
-        if uniform.rvs(size=1) < alpha:
-            x_curr[0] = y
-        else:
-            p[0] = -p[0]
+            if uniform.rvs(size=1) < alpha:
+                x_curr[i] = y
+            else:
+                p[i] = -p[i]
 
-        # Update x2
-        z = abs(norm.rvs(0, 1 / temp, 1))
-        y = x_curr[1] + p[1] * z[0] # Proposal
-        alpha = self._sample_target(temp, x_curr[0], y) / self._sample_target(temp, x_curr[0], x_curr[1])
-
-        if uniform.rvs(size=1) < alpha:
-            x_curr[1] = y
-        else:
-            p[1] = -p[1]
-        
         return x_curr, p
 
     def metropolis_guided_walk(self, n):
@@ -69,8 +61,8 @@ class GuidedMCMC:
         return x
 
     def metropolis_within_gibbs_guided_walk(self, n):
-        x = [uniform.rvs(0, 1, 2)] # Starting point
-        p = 2 * bernoulli.rvs(p=0.5, size=2) - 1 # Initialise p
+        x = [uniform.rvs(0, 1, self.n_dim)] # Starting point
+        p = 2 * bernoulli.rvs(p=0.5, size=self.n_dim) - 1 # Initialise p
 
         for _ in range(n):
             xt, p = self.step(x[-1], 1, p)

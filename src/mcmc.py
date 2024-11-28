@@ -7,12 +7,20 @@ class GuidedMCMC:
     def __init__(self, target):
         self.target = target
         self.n_dim = self._get_target_dimensions()
+        self.step = self._guided_step_resolver()
     
     def _sample_target(self, temp, *args):
         return self.target(*args) ** temp
 
     def _get_target_dimensions(self):
         return len(signature(self.target).parameters)
+    
+    def _guided_step_resolver(self):
+        if self.n_dim == 1:
+            step = self._guided_metropolis_step
+        else:
+            step = self._guided_metropolis_within_gibbs_step
+        return step
 
     def _guided_metropolis_step(self, xt, temp, p):
         z = abs(norm.rvs(0, 1 / (temp + 1), 1))
@@ -55,7 +63,7 @@ class GuidedMCMC:
         p = 2 * bernoulli.rvs(p=0.5, size=1) - 1 # Initialise p
 
         for _ in range(n):
-            xt, p = self._guided_metropolis_step(x[-1], 1, p)
+            xt, p = self.step(x[-1], 1, p)
             x.append(xt)
         x = np.array(x)
         return x
@@ -65,7 +73,7 @@ class GuidedMCMC:
         p = 2 * bernoulli.rvs(p=0.5, size=2) - 1 # Initialise p
 
         for _ in range(n):
-            xt, p = self._guided_metropolis_within_gibbs_step(x[-1], 1, p)
+            xt, p = self.step(x[-1], 1, p)
             x.append(xt)
         x = np.array(x)
         return x
@@ -90,7 +98,7 @@ class GuidedMCMC:
         i = 0 # Indexing for temperature. 0 is target distribution
 
         while l < n:
-            x, p = self._guided_metropolis_step(x, temp[0], p)
+            x, p = self.step(x, temp[0], p)
 
             if i == 0:
                 w.append(x) # Keep sample if in target temperature
@@ -116,18 +124,18 @@ class GuidedMCMC:
 
         for _ in range(n):
             xhat[0] = x[-1]
-            xhat[1], p = self._guided_metropolis_step(xhat[0], temp[1], p)
-            xhat[2], p = self._guided_metropolis_step(xhat[1], temp[2], p)
-            xhat[3], p = self._guided_metropolis_step(xhat[2], temp[3], p)
-            xhat[4], p = self._guided_metropolis_step(xhat[3], temp[4], p)
+            xhat[1], p = self.step(xhat[0], temp[1], p)
+            xhat[2], p = self.step(xhat[1], temp[2], p)
+            xhat[3], p = self.step(xhat[2], temp[3], p)
+            xhat[4], p = self.step(xhat[3], temp[4], p)
 
             # Middle step - Reverse p
             p = -p
 
-            xhat[5], p = self._guided_metropolis_step(xhat[4], temp[4], p)
-            xhat[6], p = self._guided_metropolis_step(xhat[5], temp[3], p)
-            xhat[7], p = self._guided_metropolis_step(xhat[6], temp[2], p)
-            xhat[8], p = self._guided_metropolis_step(xhat[7], temp[1], p)
+            xhat[5], p = self.step(xhat[4], temp[4], p)
+            xhat[6], p = self.step(xhat[5], temp[3], p)
+            xhat[7], p = self.step(xhat[6], temp[2], p)
+            xhat[8], p = self.step(xhat[7], temp[1], p)
 
             # Reverse p again to maintain invariance
             p = -p
@@ -161,17 +169,17 @@ class GuidedMCMC:
         while l < n:
             # Algorithm for target temperature
             if i == 0:
-                x, p = self._guided_metropolis_step(x, temp[0], p)
+                x, p = self.step(x, temp[0], p)
                 w.append(x)
                 l += 1
 
                 # Part tempered transitions step
                 if uniform.rvs(size=1) < c_up:
                     xhat[0] = x
-                    xhat[1], p = self._guided_metropolis_step(xhat[0], temp[1], p)
-                    xhat[2], p = self._guided_metropolis_step(xhat[1], temp[2], p)
-                    xhat[3], p = self._guided_metropolis_step(xhat[2], temp[3], p)
-                    xhat[4], p = self._guided_metropolis_step(xhat[3], temp[4], p)
+                    xhat[1], p = self.step(xhat[0], temp[1], p)
+                    xhat[2], p = self.step(xhat[1], temp[2], p)
+                    xhat[3], p = self.step(xhat[2], temp[3], p)
+                    xhat[4], p = self.step(xhat[3], temp[4], p)
 
                     numerator = self._sample_target(temp[1], xhat[0]) * self._sample_target(temp[2], xhat[1]) * self._sample_target(temp[3], xhat[2]) * \
                         self._sample_target(temp[4], xhat[3]) * pi[0] * c_down
@@ -184,14 +192,14 @@ class GuidedMCMC:
                         i = 1
 
             elif i == 1:
-                x, p = self._guided_metropolis_step(x, temp[4], p)
+                x, p = self.step(x, temp[4], p)
 
                 if uniform.rvs(size=1) < c_down:
                     xhat[4] = x
-                    xhat[3], p = self._guided_metropolis_step(xhat[4], temp[4], p)
-                    xhat[2], p = self._guided_metropolis_step(xhat[3], temp[3], p)
-                    xhat[1], p = self._guided_metropolis_step(xhat[2], temp[2], p)
-                    xhat[0], p = self._guided_metropolis_step(xhat[1], temp[1], p)
+                    xhat[3], p = self.step(xhat[4], temp[4], p)
+                    xhat[2], p = self.step(xhat[3], temp[3], p)
+                    xhat[1], p = self.step(xhat[2], temp[2], p)
+                    xhat[0], p = self.step(xhat[1], temp[1], p)
 
                     numerator = self._sample_target(temp[1], xhat[0]) * self._sample_target(temp[2], xhat[1]) * self._sample_target(temp[3], xhat[2]) * \
                         self._sample_target(temp[4], xhat[3]) * pi[1] * c_down

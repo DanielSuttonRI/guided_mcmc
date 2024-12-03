@@ -1,7 +1,9 @@
 import numpy as np
 import seaborn as sns
 from inspect import signature
+from functools import reduce
 from scipy.stats import norm, uniform, bernoulli
+from operator import mul
 
 class GuidedMCMC:
     def __init__(self, target):
@@ -110,37 +112,42 @@ class GuidedMCMC:
 
 
     def tempered_transitions_guided_walk(self, n, temp):
-        x = [uniform.rvs(0, 1, 1)] # Homogenous Markov Chain
-        xhat = [None for i in range(9)] # Inhomogenous Markov Chain
-        p = 2 * bernoulli.rvs(p=0.5, size=1) - 1 # Initialise p
+        n_heated_temp = len(temp) - 1
+        x = [uniform.rvs(0, 1, self.n_dim)] # Homogenous Markov Chain
+        xhat = [None for i in range(2 * n_heated_temp + 1)] # Inhomogenous Markov Chain
+        p = 2 * bernoulli.rvs(p=0.5, size=self.n_dim) - 1 # Initialise p
 
         for _ in range(n):
             xhat[0] = x[-1]
-            xhat[1], p = self.step(xhat[0], temp[1], p)
-            xhat[2], p = self.step(xhat[1], temp[2], p)
-            xhat[3], p = self.step(xhat[2], temp[3], p)
-            xhat[4], p = self.step(xhat[3], temp[4], p)
 
+            for i in range(n_heated_temp):
+                xhat[i + 1], p = self.step(xhat[i], temp[i + 1], p)
+            
             # Middle step - Reverse p
             p = -p
 
-            xhat[5], p = self.step(xhat[4], temp[4], p)
-            xhat[6], p = self.step(xhat[5], temp[3], p)
-            xhat[7], p = self.step(xhat[6], temp[2], p)
-            xhat[8], p = self.step(xhat[7], temp[1], p)
-
+            for i in range(n_heated_temp):
+                xhat[i + n_heated_temp + 1], p = self.step(xhat[i + n_heated_temp], temp[n_heated_temp - i], p)
+            
             # Reverse p again to maintain invariance
             p = -p
 
-            numerator = self._sample_target(temp[1], xhat[0]) * self._sample_target(temp[2], xhat[1]) * self._sample_target(temp[3], xhat[2]) * \
-                self._sample_target(temp[4], xhat[3]) * self._sample_target(temp[3], xhat[5]) * self._sample_target(temp[2], xhat[6]) * \
-                self._sample_target(temp[1], xhat[7]) * self._sample_target(temp[0], xhat[8])
+            numerator_returns = [
+                self._sample_target(
+                    temp[n_heated_temp - abs((i + 1) % (2 * n_heated_temp) - n_heated_temp)], 
+                    *xhat[i + (i >= n_heated_temp)]
+                )
+                for i in range(2 * n_heated_temp)
+            ]
+            denominator_returns = [
+                self._sample_target(
+                    temp[n_heated_temp - abs(((2 * n_heated_temp) - i) % (2 * n_heated_temp) - n_heated_temp)], 
+                    *xhat[i + (i >= n_heated_temp)]
+                )
+                for i in range(2 * n_heated_temp)
+            ]
+            alpha = reduce(mul, numerator_returns) / reduce(mul, denominator_returns)
 
-            denominator = self._sample_target(temp[0], xhat[0]) * self._sample_target(temp[1], xhat[1]) * self._sample_target(temp[2], xhat[2]) * \
-                self._sample_target(temp[3], xhat[3]) * self._sample_target(temp[4], xhat[5]) * self._sample_target(temp[3], xhat[6]) * \
-                self._sample_target(temp[2], xhat[7]) * self._sample_target(temp[1], xhat[8])
-            
-            alpha = numerator / denominator
             if uniform.rvs(size=1) < alpha:
                 x.append(xhat[-1])
             else:

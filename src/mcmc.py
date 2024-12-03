@@ -84,9 +84,9 @@ class GuidedMCMC:
         temp_p = 1 # Trajectory for temperatures
         d = len(temp) # Number of temperatures
 
-        x = uniform.rvs(0, 1, 1) # Inhomogenous Markov Chain with samples from all temperatures
+        x = uniform.rvs(0, 1, self.n_dim) # Inhomogenous Markov Chain with samples from all temperatures
         w = [x.copy()] # Homogenous Markov Chain with samples from target
-        p = 2 * bernoulli.rvs(p=0.5, size=1) - 1 # Initialise p
+        p = 2 * bernoulli.rvs(p=0.5, size=self.n_dim) - 1 # Initialise p
 
         l = 1 # Count for chain with only target
         i = 0 # Indexing for temperature. 0 is target distribution
@@ -100,7 +100,7 @@ class GuidedMCMC:
 
             # Attempt temperature change
             j = self.tempered_transitions(i, d, temp_p)
-            alpha = self._sample_target(temp[i] * pi[j], x) / self._sample_target(temp[i] * pi[i], x)
+            alpha = self._sample_target(temp[i] * pi[j], *x) / self._sample_target(temp[i] * pi[i], *x)
 
             if uniform.rvs(size=1) < alpha:
                 i = j
